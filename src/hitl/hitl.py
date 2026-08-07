@@ -65,32 +65,41 @@ class ConfidenceRouter:
         Returns:
             RoutingDecision with routing action and metadata
         """
-        # TODO 11: Implement routing logic
-        #
-        # 1. Check if action_type is in HIGH_RISK_ACTIONS
-        #    -> If yes: always escalate (action="escalate", priority="high",
-        #       requires_human=True, reason="High-risk action: {action_type}")
-        #
-        # 2. Check confidence thresholds:
-        #    - confidence >= 0.9:
-        #      action="auto_send", priority="low",
-        #      requires_human=False, reason="High confidence"
-        #
-        #    - 0.7 <= confidence < 0.9:
-        #      action="queue_review", priority="normal",
-        #      requires_human=True, reason="Medium confidence — needs review"
-        #
-        #    - confidence < 0.7:
-        #      action="escalate", priority="high",
-        #      requires_human=True, reason="Low confidence — escalating"
+        # 1. High-risk actions ALWAYS escalate regardless of confidence score
+        if action_type in HIGH_RISK_ACTIONS:
+            return RoutingDecision(
+                action="escalate",
+                confidence=confidence,
+                reason=f"High-risk action: {action_type}",
+                priority="high",
+                requires_human=True,
+            )
 
-        return RoutingDecision(
-            action="auto_send",
-            confidence=confidence,
-            reason="TODO: implement routing logic",
-            priority="low",
-            requires_human=False,
-        )  # TODO: Replace with implementation
+        # 2. Threshold checks for general actions
+        if confidence >= self.HIGH_THRESHOLD:
+            return RoutingDecision(
+                action="auto_send",
+                confidence=confidence,
+                reason="High confidence",
+                priority="low",
+                requires_human=False,
+            )
+        elif confidence >= self.MEDIUM_THRESHOLD:
+            return RoutingDecision(
+                action="queue_review",
+                confidence=confidence,
+                reason="Medium confidence — needs review",
+                priority="normal",
+                requires_human=True,
+            )
+        else:
+            return RoutingDecision(
+                action="escalate",
+                confidence=confidence,
+                reason="Low confidence — escalating",
+                priority="high",
+                requires_human=True,
+            )
 
 
 # ============================================================
@@ -111,33 +120,33 @@ class ConfidenceRouter:
 hitl_decision_points = [
     {
         "id": 1,
-        "name": "TODO: Name this decision point",
-        "trigger": "TODO: When does this trigger?",
-        "hitl_model": "TODO: human-in-the-loop / human-on-the-loop / human-as-tiebreaker",
-        "context_needed": "TODO: What does the reviewer need to see?",
-        "example": "TODO: Give a concrete example scenario",
-        "approval_path": "TODO: Explain approve, reject and timeout behavior",
-        "audit_fields": "TODO: List correlation ID, intent, diff and reviewer decision",
+        "name": "Change Beneficiary & High-Value Money Transfer",
+        "trigger": "User requests updating beneficiary account details or initiating a money transfer over $5,000",
+        "hitl_model": "human-in-the-loop",
+        "context_needed": "Old vs new beneficiary account, recipient bank code, transfer amount, account risk score, transaction anomaly flags",
+        "example": "Customer asks: 'Transfer 50,000,000 VND to a newly added external account at 2 AM'",
+        "approval_path": "Approving executes transfer; Rejecting cancels transaction and notifies user; Timeout (after 10 minutes) automatically HOLDS and REJECTS the transfer (never auto-sends on timeout)",
+        "audit_fields": "request_id, correlation_id, user_id, intent='transfer_money', old_beneficiary, new_beneficiary, amount, reviewer_id, reviewer_decision, timeout_occurred, timestamp, layer='hitl_gate'",
     },
     {
         "id": 2,
-        "name": "TODO: Name this decision point",
-        "trigger": "TODO: When does this trigger?",
-        "hitl_model": "TODO: human-in-the-loop / human-on-the-loop / human-as-tiebreaker",
-        "context_needed": "TODO: What does the reviewer need to see?",
-        "example": "TODO: Give a concrete example scenario",
-        "approval_path": "TODO: Explain approve, reject and timeout behavior",
-        "audit_fields": "TODO: List correlation ID, intent, diff and reviewer decision",
+        "name": "Account Closure & Data Deletion",
+        "trigger": "User requests to close bank account or delete personal data (GDPR/PII deletion)",
+        "hitl_model": "human-in-the-loop",
+        "context_needed": "Account status, remaining balance, open loans/credit cards, identity verification document status",
+        "example": "Customer asks agent: 'Close my bank account and erase all my personal transaction records'",
+        "approval_path": "Reviewer verifies zero balance and ID proof. Approving marks account for closure; Rejecting notifies user of pending balance/loans; Timeout automatically HOLDS request without deleting data",
+        "audit_fields": "request_id, correlation_id, user_id, intent='close_account', account_balance, active_loans, reviewer_id, reviewer_decision, timeout_occurred, timestamp, layer='hitl_gate'",
     },
     {
         "id": 3,
-        "name": "TODO: Name this decision point",
-        "trigger": "TODO: When does this trigger?",
-        "hitl_model": "TODO: human-in-the-loop / human-on-the-loop / human-as-tiebreaker",
-        "context_needed": "TODO: What does the reviewer need to see?",
-        "example": "TODO: Give a concrete example scenario",
-        "approval_path": "TODO: Explain approve, reject and timeout behavior",
-        "audit_fields": "TODO: List correlation ID, intent, diff and reviewer decision",
+        "name": "Medium Confidence Answer Queue Review",
+        "trigger": "LLM response confidence score falls between 0.70 and 0.89 for complex banking inquiries",
+        "hitl_model": "human-on-the-loop",
+        "context_needed": "User prompt history, retrieved RAG document chunks, model draft response, confidence score",
+        "example": "Customer asks about obscure home loan interest adjustment clauses and retrieved RAG chunks contain conflicting interest rates",
+        "approval_path": "Reviewer can approve draft, edit response diff, or reject; Timeout auto-sends fallback response asking customer to contact support desk",
+        "audit_fields": "request_id, correlation_id, user_id, prompt_text, model_draft_diff, confidence_score, reviewer_id, decision, timestamp, layer='confidence_router'",
     },
 ]
 
